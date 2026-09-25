@@ -14,7 +14,8 @@ streamlit run app.py
 - **SEC EDGAR**: primary-source layer สำหรับ filing history และ XBRL Company Facts
 - **Python financial engine**: คำนวณ growth, margins, FCF, debt trend และ metric ที่รองรับจาก SEC facts โดยไม่ให้ AI สร้างตัวเลข
 - **yfinance**: ข้อมูลตลาด/ราคาและตัวช่วยเสริมที่ SEC ไม่ได้ให้โดยตรง
-- **SQLite**: เก็บ Watchlist และ Research Notes สำหรับการใช้งานคนเดียว
+- **SQLite**: เก็บ Watchlist, Research Notes และ Evidence สำหรับการใช้งานคนเดียว
+- **SEC evidence extraction**: ดึงข้อความสั้น ๆ จาก primary document ของ filing ที่เลือกเพื่อสร้าง candidate evidence ให้ผู้ใช้ตรวจและบันทึกเอง
 - **Streamlit**: UI หลัก
 
 SEC ระบุว่า EDGAR APIs มี submissions history และ XBRL financial statement data และ API ของ `data.sec.gov` ไม่ต้องใช้ API key; ข้อมูลถูกอัปเดตใกล้เคียง real time.
@@ -24,6 +25,8 @@ SEC ระบุว่า EDGAR APIs มี submissions history และ XBRL f
 - ไม่สร้าง buy/sell signal
 - ไม่ให้ AI คำนวณตัวเลขทางการเงิน
 - ไม่เติมค่าที่ไม่มีหลักฐาน: เมื่อข้อมูลไม่พร้อมจะแสดง `N/A`
+- Evidence ที่ระบบสกัดจาก filing เป็นเพียง candidate: ผู้ใช้ต้องตรวจต้นฉบับ SEC ก่อนบันทึก
+- Evidence แต่ละรายการเก็บ source URL, form, filing date และ period เพื่อย้อนกลับไปยังเอกสารต้นฉบับ
 - แยกข้อมูลบริษัทออกจาก scenario ที่ผู้ใช้สมมติ
 - ตัวเลขสำคัญควรตรวจสอบกับ annual report / 10-K / 20-F และหมายเหตุประกอบงบ
 - Watchlist และ Notes เป็นข้อมูล local ของผู้ใช้คนเดียว และฐานข้อมูล `research.db` จะไม่ถูก commit ตาม `.gitignore`
@@ -42,7 +45,7 @@ export SEC_USER_AGENT="Stock Research Terminal/1.0 contact@example.com"
 
 ## Testing
 
-Regression tests สำหรับ financial engine อยู่ที่ `tests/test_financial_engine.py`.
+Regression tests อยู่ที่ `tests/test_financial_engine.py` และ `tests/test_sec_evidence.py`.
 
 ```bash
 pip install -r requirements-dev.txt
