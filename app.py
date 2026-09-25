@@ -38,12 +38,12 @@ def fmt_money(x):
         return "N/A"
     a = abs(value)
     if a >= 1e12:
-        return f"$"{value / 1e12:.2f}T"
+        return f"${value / 1e12:.2f}T"
     if a >= 1e9:
-        return f"$"{value / 1e9:.2f}B"
+        return f"${value / 1e9:.2f}B"
     if a >= 1e6:
-        return f"$"{value / 1e6:.2f}M"
-    return f"$"{value:,.0f}"
+        return f"${value / 1e6:.2f}M"
+    return f"${value:,.0f}"
 
 def fmt_pct(x):
     value = _to_finite_float(x)
