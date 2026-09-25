@@ -245,6 +245,49 @@ with tab1:
     st.dataframe(base,hide_index=True,use_container_width=True)
 
 with tab2:
+    sec_quality = {}
+    try:
+        sec_snapshot = sec_financial_snapshot(ticker)
+        if sec_snapshot and not sec_snapshot.get("_error"):
+            sec_quality = build_sec_financial_quality(sec_snapshot)
+    except Exception:
+        sec_quality = {}
+
+    sec_latest = sec_quality.get("latest", {})
+    if sec_latest:
+        st.markdown('<div class="section">SEC Financial Quality — deterministic calculations</div>',unsafe_allow_html=True)
+        st.caption("คำนวณด้วย Python จาก annual SEC XBRL facts โดยตรง ไม่ใช้ AI คำนวณตัวเลข")
+        sy = sec_latest.get("fiscal_year")
+        a,b,c,d = st.columns(4)
+        a.metric("Revenue CAGR (3Y)",fmt_pct(sec_latest.get("revenue_cagr_3y")))
+        b.metric("Net Income CAGR (3Y)",fmt_pct(sec_latest.get("net_income_cagr_3y")))
+        c.metric("FCF Margin",fmt_pct(sec_latest.get("fcf_margin")))
+        d.metric("Operating Margin",fmt_pct(sec_latest.get("operating_margin")))
+        st.caption(f"SEC fiscal year: {sy} · Source: SEC EDGAR Company Facts")
+
+        series = sec_quality.get("series", {})
+        sec_rows = [
+            {"Metric":"Revenue","Value":fmt_money(sec_latest.get("revenue"))},
+            {"Metric":"Net Income","Value":fmt_money(sec_latest.get("net_income"))},
+            {"Metric":"Operating Cash Flow","Value":fmt_money(series.get("Operating Cash Flow",{}).get(sy)) if sy else "N/A"},
+            {"Metric":"Capital Expenditure","Value":fmt_money(series.get("Capital Expenditure",{}).get(sy)) if sy else "N/A"},
+            {"Metric":"Free Cash Flow","Value":fmt_money(series.get("Free Cash Flow",{}).get(sy)) if sy else "N/A"},
+            {"Metric":"Cash","Value":fmt_money(sec_latest.get("cash"))},
+            {"Metric":"Debt","Value":fmt_money(sec_latest.get("debt"))},
+            {"Metric":"Net Debt","Value":fmt_money(sec_latest.get("net_debt"))},
+            {"Metric":"ROA (simple)","Value":fmt_pct(sec_latest.get("roa_simple"))},
+            {"Metric":"Debt YoY","Value":fmt_pct(sec_latest.get("debt_change_yoy"))},
+            {"Metric":"Diluted Shares YoY","Value":fmt_pct(sec_latest.get("diluted_shares_yoy"))},
+        ]
+        st.dataframe(pd.DataFrame(sec_rows),hide_index=True,use_container_width=True)
+
+        trend_df = pd.DataFrame(sec_quality.get("trend",[]))
+        if not trend_df.empty:
+            st.markdown('<div class="section">SEC annual trend</div>',unsafe_allow_html=True)
+            st.dataframe(trend_df,hide_index=True,use_container_width=True)
+    else:
+        st.info("SEC Financial Quality ยังไม่มีข้อมูลเพียงพอสำหรับ ticker นี้; metrics จาก yfinance ด้านล่างเป็นข้อมูลเสริม")
+
     revenue=latest_row(income,["Total Revenue"]); gross=latest_row(income,["Gross Profit"])
     op=latest_row(income,["Operating Income"]); net=latest_row(income,["Net Income"])
     rd=latest_row(income,["Research And Development"])
