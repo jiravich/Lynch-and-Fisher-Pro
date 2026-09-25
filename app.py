@@ -7,7 +7,7 @@ from datetime import datetime
 
 from financial_engine import build_sec_financial_quality
 from sec_evidence import extract_filing_candidates
-from storage import add_watchlist, delete_evidence, init_db, list_evidence, list_notes, remove_watchlist, save_evidence, save_note
+from storage import add_watchlist, delete_evidence, init_db, list_evidence, list_notes, list_watchlist, remove_watchlist, save_evidence, save_note
 
 st.set_page_config(page_title="Stock Research Terminal", page_icon="📊", layout="wide")
 
