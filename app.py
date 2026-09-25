@@ -385,6 +385,11 @@ with tab5:
             key="auto_evidence_filing",
         )
         auto_row = auto_filings.iloc[auto_labels.index(auto_label)]
+        candidate_key = f"{ticker}:{auto_row['URL']}"
+        if st.session_state.get("sec_candidate_key") != candidate_key:
+            st.session_state.pop("sec_candidates", None)
+            st.session_state.pop("sec_candidate_source", None)
+
         if st.button("สกัด Evidence candidates", key="extract_sec_candidates", use_container_width=True):
             try:
                 with st.spinner("กำลังอ่านข้อความจาก SEC filing..."):
@@ -395,6 +400,7 @@ with tab5:
                     )
                 st.session_state["sec_candidates"] = candidates
                 st.session_state["sec_candidate_source"] = auto_row.to_dict()
+                st.session_state["sec_candidate_key"] = candidate_key
             except Exception as e:
                 st.error("สกัดข้อความจาก filing ไม่สำเร็จ: " + str(e))
 
