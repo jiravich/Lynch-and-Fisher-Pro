@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 from financial_engine import build_sec_financial_quality
+from sec_evidence import extract_filing_candidates
 from storage import add_watchlist, delete_evidence, init_db, list_evidence, list_notes, remove_watchlist, save_evidence, save_note
 
 st.set_page_config(page_title="Stock Research Terminal", page_icon="📊", layout="wide")
@@ -367,6 +368,64 @@ with tab4:
 
 with tab5:
     sec_addon(ticker)
+
+    st.markdown('<div class="section">Automatic SEC Evidence Extraction</div>', unsafe_allow_html=True)
+    st.caption("ดึงข้อความสั้น ๆ จากเอกสารหลักของ SEC เพื่อเป็น candidate evidence เท่านั้น ผู้ใช้ต้องตรวจต้นฉบับและกดบันทึกเอง")
+    auto_filings, _ = sec_filing_rows(ticker)
+    if auto_filings.empty:
+        st.info("ยังไม่มี filing ให้ดึง evidence")
+    else:
+        auto_labels = [
+            f"{row['Form']} · filed {row['Filed']} · period {row['Period']}"
+            for _, row in auto_filings.iterrows()
+        ]
+        auto_label = st.selectbox(
+            "เลือก filing สำหรับสกัด evidence",
+            auto_labels,
+            key="auto_evidence_filing",
+        )
+        auto_row = auto_filings.iloc[auto_labels.index(auto_label)]
+        if st.button("สกัด Evidence candidates", key="extract_sec_candidates", use_container_width=True):
+            try:
+                with st.spinner("กำลังอ่านข้อความจาก SEC filing..."):
+                    candidates = extract_filing_candidates(
+                        auto_row["URL"],
+                        SEC_USER_AGENT,
+                        limit_per_topic=2,
+                    )
+                st.session_state["sec_candidates"] = candidates
+                st.session_state["sec_candidate_source"] = auto_row.to_dict()
+            except Exception as e:
+                st.error("สกัดข้อความจาก filing ไม่สำเร็จ: " + str(e))
+
+        candidates = st.session_state.get("sec_candidates", [])
+        candidate_source = st.session_state.get("sec_candidate_source")
+        if candidates and candidate_source:
+            st.markdown("#### Candidate evidence")
+            st.caption("ข้อความเป็น excerpt จาก filing โดยตรง; ระบบไม่ได้สรุปหรือเติมข้อเท็จจริง")
+            for idx, candidate in enumerate(candidates):
+                with st.container(border=True):
+                    left, right = st.columns([5, 1])
+                    left.markdown(
+                        f"**{candidate['framework']} · {candidate['topic']}**  \n"
+                        f"{candidate['statement']}"
+                    )
+                    if right.button("บันทึก", key=f"save_candidate_{idx}"):
+                        save_evidence(
+                            ticker=ticker,
+                            framework=candidate["framework"],
+                            topic=candidate["topic"],
+                            statement=candidate["statement"],
+                            source_type="SEC filing (auto-extracted)",
+                            source_url=candidate_source["URL"],
+                            form=candidate_source["Form"],
+                            filing_date=candidate_source["Filed"],
+                            period=candidate_source["Period"],
+                            fact_or_inference=candidate["fact_or_inference"],
+                            polarity=candidate["polarity"],
+                        )
+                        st.success("บันทึก candidate แล้ว")
+                        st.rerun()
 
     st.markdown('<div class="section">Evidence Store</div>', unsafe_allow_html=True)
     st.caption("เก็บหลักฐานที่ตรวจสอบย้อนกลับได้ แล้วค่อยนำไปสังเคราะห์ด้วย AI ในขั้นถัดไป — ตอนนี้ยังไม่มี AI ตัดสินแทนผู้ใช้")
