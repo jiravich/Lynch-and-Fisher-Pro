@@ -5,6 +5,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 
+from financial_engine import build_sec_financial_quality
+from storage import add_watchlist, init_db, list_notes, save_note, remove_watchlist
+
 st.set_page_config(page_title="Stock Research Terminal", page_icon="📊", layout="wide")
 
 st.markdown("""
@@ -126,13 +129,17 @@ def sec_financial_snapshot(ticker):
         out={}
         tag_map={
             "Revenue":[("us-gaap","RevenueFromContractWithCustomerExcludingAssessedTax"),("us-gaap","Revenues")],
+            "Gross Profit":[("us-gaap","GrossProfit")],
+            "Operating Income":[("us-gaap","OperatingIncomeLoss")],
             "Net Income":[("us-gaap","NetIncomeLoss")],
             "Operating Cash Flow":[("us-gaap","NetCashProvidedByUsedInOperatingActivities")],
             "Capital Expenditure":[("us-gaap","PaymentsToAcquirePropertyPlantAndEquipment")],
             "Assets":[("us-gaap","Assets")],
             "Liabilities":[("us-gaap","Liabilities")],
             "Cash":[("us-gaap","CashAndCashEquivalentsAtCarryingValue")],
-            "Debt":[("us-gaap","LongTermDebtNoncurrent"),("us-gaap","LongTermDebtCurrent")]
+            "Debt Current":[("us-gaap","LongTermDebtCurrent")],
+            "Debt Noncurrent":[("us-gaap","LongTermDebtNoncurrent")],
+            "Diluted Shares":[("us-gaap","WeightedAverageNumberOfDilutedSharesOutstanding")]
         }
         for label,tags in tag_map.items():
             df=sec_fact_series(facts,tags)
@@ -164,8 +171,14 @@ def sec_addon(ticker):
             records.append({"Fact":label,"Value":x.get("val"),"Unit":x.get("uom",""),"Filed":x.get("filed"),"FY":x.get("fy"),"Form":x.get("form"),"Accession":x.get("accn","")})
     if records: st.dataframe(pd.DataFrame(records),hide_index=True,use_container_width=True)
 
+init_db()
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist=["NVDA","MSFT","AAPL","GOOGL"]
+    saved = list_watchlist()
+    if not saved:
+        for seed in ["NVDA","MSFT","AAPL","GOOGL"]:
+            add_watchlist(seed)
+        saved = list_watchlist()
+    st.session_state.watchlist = saved
 
 st.sidebar.title("📊 Stock Research")
 ticker=st.sidebar.text_input("Ticker",value="NVDA",placeholder="AAPL, NVDA, MSFT").strip().upper()
@@ -175,7 +188,15 @@ for item in st.session_state.watchlist:
 new_ticker=st.sidebar.text_input("เพิ่มหุ้น",placeholder="เช่น AMZN")
 if st.sidebar.button("เพิ่มเข้า Watchlist",use_container_width=True) and new_ticker.strip():
     t=new_ticker.strip().upper()
-    if t not in st.session_state.watchlist: st.session_state.watchlist.append(t); st.rerun()
+    if t not in st.session_state.watchlist:
+        add_watchlist(t)
+        st.session_state.watchlist = list_watchlist()
+        st.rerun()
+remove_ticker = st.sidebar.selectbox("ลบออกจาก Watchlist", ["—"] + st.session_state.watchlist)
+if remove_ticker != "—" and st.sidebar.button("ลบหุ้น", use_container_width=True):
+    remove_watchlist(remove_ticker)
+    st.session_state.watchlist = list_watchlist()
+    st.rerun()
 st.sidebar.divider()
 st.sidebar.caption("ข้อมูลมาจาก yfinance และ SEC EDGAR; ความครอบคลุมอาจต่างกันตามบริษัท")
 st.sidebar.caption("SEC User-Agent: ตั้งค่า SEC_USER_AGENT ใน Secrets/Environment")
@@ -284,6 +305,21 @@ with tab4:
     st.dataframe(risks,hide_index=True,use_container_width=True)
     st.markdown('<div class="section">ก่อนตัดสินใจควรตรวจอะไร?</div>',unsafe_allow_html=True)
     st.markdown("""<div class="note"><b>1.</b> Annual report / 10-K และหมายเหตุประกอบงบ<br><b>2.</b> รายงานไตรมาสล่าสุดและคำอธิบายของผู้บริหาร<br><b>3.</b> Revenue drivers, customers, competitors และ market structure<br><b>4.</b> Cash flow, debt, dilution และ stock-based compensation<br><b>5.</b> Valuation เทียบกับ growth ที่ตลาดกำลังคาดหวัง</div>""",unsafe_allow_html=True)
+
+    st.markdown('<div class="section">Research Notes</div>',unsafe_allow_html=True)
+    note = st.text_area("บันทึกสำหรับหุ้นนี้",placeholder="สมมติฐาน คำถามจาก 10-K หรือสิ่งที่ต้องตรวจต่อ...",key="research_note")
+    if st.button("บันทึก Note",key="save_note") :
+        if note.strip():
+            save_note(ticker,note)
+            st.success("บันทึกแล้ว")
+        else:
+            st.warning("ใส่ข้อความก่อนบันทึก")
+    saved_notes = list_notes(ticker)
+    if saved_notes:
+        notes_df = pd.DataFrame(saved_notes)
+        notes_df["created_at"] = pd.to_datetime(notes_df["created_at"],errors="coerce").dt.strftime("%Y-%m-%d %H:%M")
+        notes_df = notes_df.rename(columns={"created_at":"Created","note":"Note"}).drop(columns=["id"])
+        st.dataframe(notes_df,hide_index=True,use_container_width=True)
 
 with tab5:
     sec_addon(ticker)
