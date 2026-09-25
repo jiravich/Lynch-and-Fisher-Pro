@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -64,7 +65,8 @@ import requests
 import pandas as pd
 import streamlit as st
 
-SEC_HEADERS = {"User-Agent": "Stock Research Terminal contact@example.com", "Accept-Encoding": "gzip, deflate"}
+SEC_USER_AGENT = st.secrets.get("SEC_USER_AGENT", os.getenv("SEC_USER_AGENT", "Stock Research Terminal/1.0"))
+SEC_HEADERS = {"User-Agent": SEC_USER_AGENT, "Accept-Encoding": "gzip, deflate"}
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def sec_ticker_map():
@@ -159,7 +161,7 @@ def sec_addon(ticker):
     for label,df in snap.items():
         if isinstance(df,pd.DataFrame) and not df.empty:
             x=df.iloc[0]
-            records.append({"Fact":label,"Value":x.get("val"),"Unit":x.get("accn",""),"Filed":x.get("filed"),"FY":x.get("fy"),"Form":x.get("form")})
+            records.append({"Fact":label,"Value":x.get("val"),"Unit":x.get("uom",""),"Filed":x.get("filed"),"FY":x.get("fy"),"Form":x.get("form"),"Accession":x.get("accn","")})
     if records: st.dataframe(pd.DataFrame(records),hide_index=True,use_container_width=True)
 
 if "watchlist" not in st.session_state:
@@ -175,7 +177,8 @@ if st.sidebar.button("เพิ่มเข้า Watchlist",use_container_width
     t=new_ticker.strip().upper()
     if t not in st.session_state.watchlist: st.session_state.watchlist.append(t); st.rerun()
 st.sidebar.divider()
-st.sidebar.caption("ข้อมูลมาจาก yfinance และอาจล่าช้าหรือไม่ครบทุกบริษัท")
+st.sidebar.caption("ข้อมูลมาจาก yfinance และ SEC EDGAR; ความครอบคลุมอาจต่างกันตามบริษัท")
+st.sidebar.caption("SEC User-Agent: ตั้งค่า SEC_USER_AGENT ใน Secrets/Environment")
 st.sidebar.caption("อัปเดตหน้า: "+datetime.now().strftime("%Y-%m-%d %H:%M"))
 
 if not ticker: st.info("ใส่ ticker เพื่อเริ่มค้นคว้าหุ้น"); st.stop()
@@ -201,7 +204,7 @@ c4.metric("Forward P/E",fmt_num(info.get("forwardPE")))
 c5.metric("Dividend Yield",fmt_pct(info.get("dividendYield")))
 st.caption("Sector: "+str(info.get("sector","N/A"))+" · Industry: "+str(info.get("industry","N/A")))
 
-tab1,tab2,tab3,tab4=st.tabs(["📌 Overview","📈 Growth & Quality","💰 Valuation","⚠️ Risks & Checklist"])
+tab1,tab2,tab3,tab4,tab5=st.tabs(["📌 Overview","📈 Growth & Quality","💰 Valuation","⚠️ Risks & Checklist","🏛️ SEC Evidence"])
 
 with tab1:
     st.markdown('<div class="section">ราคาย้อนหลัง 5 ปี</div>',unsafe_allow_html=True)
@@ -281,6 +284,10 @@ with tab4:
     st.dataframe(risks,hide_index=True,use_container_width=True)
     st.markdown('<div class="section">ก่อนตัดสินใจควรตรวจอะไร?</div>',unsafe_allow_html=True)
     st.markdown("""<div class="note"><b>1.</b> Annual report / 10-K และหมายเหตุประกอบงบ<br><b>2.</b> รายงานไตรมาสล่าสุดและคำอธิบายของผู้บริหาร<br><b>3.</b> Revenue drivers, customers, competitors และ market structure<br><b>4.</b> Cash flow, debt, dilution และ stock-based compensation<br><b>5.</b> Valuation เทียบกับ growth ที่ตลาดกำลังคาดหวัง</div>""",unsafe_allow_html=True)
+
+with tab5:
+    sec_addon(ticker)
+    st.caption("SEC layer ใช้ submissions history และ XBRL Company Facts จาก SEC เป็นหลัก; ตัวเลขจะแสดง filing form และวันที่ยื่นเพื่อช่วยตรวจสอบย้อนกลับ.")
 
 st.divider()
 st.caption("Stock Research Terminal · ใช้เพื่อการศึกษาและการค้นคว้าด้วยตนเอง · ไม่มี buy/sell signal")
