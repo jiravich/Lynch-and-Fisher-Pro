@@ -139,6 +139,18 @@ def save_evidence(
         return
     init_db()
     with get_connection() as conn:
+        exists = conn.execute(
+            """
+            SELECT 1
+            FROM evidence
+            WHERE ticker = ? AND framework = ? AND topic = ? AND statement = ?
+              AND COALESCE(source_url, '') = COALESCE(?, '')
+            LIMIT 1
+            """,
+            (values[0], values[1], values[2], values[3], values[5]),
+        ).fetchone()
+        if exists:
+            return
         conn.execute(
             """
             INSERT INTO evidence (
