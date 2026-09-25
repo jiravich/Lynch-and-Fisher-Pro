@@ -230,17 +230,20 @@ try:
 except Exception as e:
     st.error("โหลดข้อมูลไม่สำเร็จ: "+str(e)); st.stop()
 
-price=info.get("currentPrice") or info.get("regularMarketPrice")
+price = _to_finite_float(info.get("currentPrice"))
+if price is None:
+    price = _to_finite_float(info.get("regularMarketPrice"))
 if not info or price is None:
-    st.error("ไม่พบข้อมูลที่เพียงพอสำหรับ "+ticker); st.stop()
-name=info.get("longName") or info.get("shortName") or ticker
-change=info.get("regularMarketChangePercent")
+    st.error("ไม่พบข้อมูลราคาที่เพียงพอสำหรับ " + ticker)
+    st.stop()
+name = info.get("longName") or info.get("shortName") or ticker
+change = _to_finite_float(info.get("regularMarketChangePercent"))
 
 st.title(name+" ("+ticker+")")
 st.caption("Research before investing — รวบรวมข้อมูลให้ตรวจสอบเอง ไม่ใช่ระบบแนะนำซื้อหรือขาย")
 
 c1,c2,c3,c4,c5=st.columns(5)
-c1.metric("ราคาล่าสุด","$%.2f"%price,"%.2f%%"%change if change is not None else None)
+c1.metric("ราคาล่าสุด", f"${price:.2f}", f"{change:.2f}%" if change is not None else None)
 c2.metric("Market Cap",fmt_money(info.get("marketCap")))
 c3.metric("Trailing P/E",fmt_num(info.get("trailingPE")))
 c4.metric("Forward P/E",fmt_num(info.get("forwardPE")))
@@ -261,9 +264,9 @@ with tab1:
     st.markdown('<div class="section">ข้อมูลพื้นฐาน</div>',unsafe_allow_html=True)
     base=pd.DataFrame({"รายการ":["Employees","Country","Exchange","52W High","52W Low","Beta","Shares Outstanding"],
     "ข้อมูล":[info.get("fullTimeEmployees","N/A"),info.get("country","N/A"),info.get("exchange","N/A"),
-    "$%.2f"%info["fiftyTwoWeekHigh"] if info.get("fiftyTwoWeekHigh") else "N/A",
-    "$%.2f"%info["fiftyTwoWeekLow"] if info.get("fiftyTwoWeekLow") else "N/A",
-    fmt_num(info.get("beta")), "%,.0f"%info["sharesOutstanding"] if info.get("sharesOutstanding") else "N/A"]})
+    f"${_to_finite_float(info.get('fiftyTwoWeekHigh')):.2f}" if _to_finite_float(info.get("fiftyTwoWeekHigh")) is not None else "N/A",
+    f"${_to_finite_float(info.get('fiftyTwoWeekLow')):.2f}" if _to_finite_float(info.get("fiftyTwoWeekLow")) is not None else "N/A",
+    fmt_num(info.get("beta")), fmt_num(info.get("sharesOutstanding"))]})
     st.dataframe(base,hide_index=True,use_container_width=True)
 
 with tab2:
@@ -343,20 +346,20 @@ with tab2:
 with tab3:
     st.markdown('<div class="section">Valuation snapshot</div>',unsafe_allow_html=True)
     vals=pd.DataFrame({"Metric":["Current Price","Trailing P/E","Forward P/E","PEG","Price / Sales","Price / Book","EV / EBITDA"],
-    "Value":["$%.2f"%price,fmt_num(info.get("trailingPE")),fmt_num(info.get("forwardPE")),fmt_num(info.get("pegRatio")),
+    "Value":[f"${price:.2f}",fmt_num(info.get("trailingPE")),fmt_num(info.get("forwardPE")),fmt_num(info.get("pegRatio")),
     fmt_num(info.get("priceToSalesTrailing12Months")),fmt_num(info.get("priceToBook")),fmt_num(info.get("enterpriseToEbitda"))]})
     st.dataframe(vals,hide_index=True,use_container_width=True)
     st.markdown('<div class="section">Scenario calculator — ไม่ใช่คำแนะนำราคา</div>',unsafe_allow_html=True)
     st.caption("ใช้ดู sensitivity ของสมมติฐานเท่านั้น")
-    eps=info.get("trailingEps")
-    if eps and eps>0:
+    eps = _to_finite_float(info.get("trailingEps"))
+    if eps is not None and eps > 0:
         x,y,z=st.columns(3)
         target_pe=x.number_input("สมมติฐาน P/E",1.0,100.0,20.0,1.0)
         growth=y.number_input("EPS growth ต่อปี (%)",-50.0,100.0,15.0,1.0)
         years=z.number_input("จำนวนปี",1,10,5,1)
-        future_eps=eps*((1+growth/100)**years); scenario=future_eps*target_pe
-        st.metric("Scenario EPS × P/E","$%.2f"%scenario)
-        st.caption("เริ่มจาก trailing EPS $%.2f"%eps)
+        future_eps=eps*((1+growth/100)**years); scenario = future_eps * target_pe
+        st.metric("Scenario EPS × P/E", f"${scenario:.2f}")
+        st.caption(f"เริ่มจาก trailing EPS ${eps:.2f}")
     else: st.info("ไม่มี trailing EPS ที่เหมาะสำหรับ scenario นี้")
     div=pd.DataFrame({"รายการ":["Dividend Rate","Dividend Yield","Payout Ratio","5Y Avg Dividend Yield"],
     "ข้อมูล":[fmt_money(info.get("dividendRate")),fmt_pct(info.get("dividendYield")),fmt_pct(info.get("payoutRatio")),fmt_pct(info.get("fiveYearAvgDividendYield"))]})
