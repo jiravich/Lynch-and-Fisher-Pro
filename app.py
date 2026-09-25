@@ -1,4 +1,5 @@
 import os
+import math
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -22,38 +23,40 @@ html,body,[class*="css"]{font-family:'Sarabun',sans-serif}
 """, unsafe_allow_html=True)
 
 def _to_finite_float(x):
-    """Convert external/API values to a safe finite float, or None if unavailable."""
-    if x is None:
-        return None
+    """Convert external/API values to a safe scalar float, or None if unavailable."""
     try:
-        value = pd.to_numeric(x, errors="coerce")
-        if pd.isna(value):
+        if x is None:
             return None
-        value = float(value)
-        if not __import__("math").isfinite(value):
-            return None
-        return value
+        value = float(x)
+        return value if math.isfinite(value) else None
     except (TypeError, ValueError, OverflowError):
         return None
 
 def fmt_money(x):
-    x = _to_finite_float(x)
-    if x is None: return "N/A"
-    a=abs(x)
-    if a>=1e12: return "$%.2fT"%(x/1e12)
-    if a>=1e9: return "$%.2fB"%(x/1e9)
-    if a>=1e6: return "$%.2fM"%(x/1e6)
-    return "$%,.0f"%x
+    value = _to_finite_float(x)
+    if value is None:
+        return "N/A"
+    a = abs(value)
+    if a >= 1e12:
+        return f"$"{value / 1e12:.2f}T"
+    if a >= 1e9:
+        return f"$"{value / 1e9:.2f}B"
+    if a >= 1e6:
+        return f"$"{value / 1e6:.2f}M"
+    return f"$"{value:,.0f}"
 
 def fmt_pct(x):
-    x = _to_finite_float(x)
-    if x is None: return "N/A"
-    return "%.1f%%"%(x*100)
+    value = _to_finite_float(x)
+    return "N/A" if value is None else f"{value * 100:.1f}%"
 
 def fmt_num(x):
-    x = _to_finite_float(x)
-    if x is None: return "N/A"
-    return "%,.2f"%x
+    try:
+        value = float(x)
+        if not math.isfinite(value):
+            return "N/A"
+        return f"{value:,.2f}"
+    except (TypeError, ValueError, OverflowError):
+        return "N/A"
 
 def safe_ratio(a,b):
     if a is None or b is None or pd.isna(a) or pd.isna(b) or b==0: return None
