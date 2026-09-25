@@ -45,6 +45,7 @@ export SEC_USER_AGENT="Stock Research Terminal/1.0 contact@example.com"
 Regression tests สำหรับ financial engine อยู่ที่ `tests/test_financial_engine.py`.
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
