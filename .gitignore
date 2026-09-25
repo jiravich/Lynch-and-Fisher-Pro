@@ -1,0 +1,14 @@
+# Local runtime data
+research.db
+research.db-journal
+research.db-shm
+research.db-wal
+
+# Secrets
+.streamlit/secrets.toml
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
