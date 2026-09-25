@@ -146,10 +146,11 @@ def build_sec_financial_quality(snapshot: dict[str, pd.DataFrame]) -> dict[str, 
     diluted_shares = annual_values(snapshot.get("Diluted Shares"))
 
     debt = _combine_series(debt_current, debt_noncurrent)
+    # Do not assume missing CapEx is zero. FCF is only calculated when both
+    # operating cash flow and CapEx are available for the same fiscal year.
     free_cash_flow = {
-        year: operating_cf[year] - abs(capex.get(year, 0.0))
-        for year in sorted(set(operating_cf) | set(capex))
-        if year in operating_cf
+        year: operating_cf[year] - abs(capex[year])
+        for year in sorted(set(operating_cf) & set(capex))
     }
 
     latest: dict[str, Any] = {}
@@ -170,11 +171,10 @@ def build_sec_financial_quality(snapshot: dict[str, pd.DataFrame]) -> dict[str, 
         latest["net_margin"] = ratio(net_income.get(latest_year), revenue.get(latest_year))
         latest["fcf_margin"] = ratio(free_cash_flow.get(latest_year), revenue.get(latest_year))
 
-    latest_asset_year = max(assets) if assets else None
-    if latest_asset_year is not None and latest_net_income is not None:
+    if latest_year is not None and latest_net_income is not None and latest_year in assets:
         latest["roa_simple"] = ratio(
             latest_net_income,
-            assets.get(latest_asset_year),
+            assets.get(latest_year),
         )
 
     latest["revenue_cagr_3y"] = cagr_from_series(revenue, 3)
@@ -189,7 +189,7 @@ def build_sec_financial_quality(snapshot: dict[str, pd.DataFrame]) -> dict[str, 
     if liabilities:
         latest["liabilities"] = liabilities[max(liabilities)]
 
-    if debt and cash:
+    if debt and cash and max(debt) == max(cash):
         latest["net_debt"] = debt[max(debt)] - cash[max(cash)]
 
     if len(debt) >= 2:
