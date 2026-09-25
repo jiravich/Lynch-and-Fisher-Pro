@@ -21,21 +21,39 @@ html,body,[class*="css"]{font-family:'Sarabun',sans-serif}
 </style>
 """, unsafe_allow_html=True)
 
+def _to_finite_float(x):
+    """Convert external/API values to a safe finite float, or None if unavailable."""
+    if x is None:
+        return None
+    try:
+        value = pd.to_numeric(x, errors="coerce")
+        if pd.isna(value):
+            return None
+        value = float(value)
+        if not pd.api.types.is_number(value) or not pd.np.isfinite(value):
+            return None
+        return value
+    except (TypeError, ValueError, OverflowError):
+        return None
+
 def fmt_money(x):
-    if x is None or pd.isna(x): return "N/A"
-    x=float(x); a=abs(x)
+    x = _to_finite_float(x)
+    if x is None: return "N/A"
+    a=abs(x)
     if a>=1e12: return "$%.2fT"%(x/1e12)
     if a>=1e9: return "$%.2fB"%(x/1e9)
     if a>=1e6: return "$%.2fM"%(x/1e6)
     return "$%,.0f"%x
 
 def fmt_pct(x):
-    if x is None or pd.isna(x): return "N/A"
-    return "%.1f%%"%(float(x)*100)
+    x = _to_finite_float(x)
+    if x is None: return "N/A"
+    return "%.1f%%"%(x*100)
 
 def fmt_num(x):
-    if x is None or pd.isna(x): return "N/A"
-    return "%,.2f"%float(x)
+    x = _to_finite_float(x)
+    if x is None: return "N/A"
+    return "%,.2f"%x
 
 def safe_ratio(a,b):
     if a is None or b is None or pd.isna(a) or pd.isna(b) or b==0: return None
