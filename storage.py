@@ -30,6 +30,25 @@ def init_db() -> None:
                 note TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS evidence (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL,
+                framework TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                statement TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_url TEXT,
+                form TEXT,
+                filing_date TEXT,
+                period TEXT,
+                fact_or_inference TEXT NOT NULL,
+                polarity TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_evidence_ticker_topic
+            ON evidence (ticker, topic);
             """
         )
 
@@ -88,3 +107,75 @@ def list_notes(ticker: str, limit: int = 20) -> list[dict]:
             (ticker.strip().upper(), int(limit)),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def save_evidence(
+    ticker: str,
+    framework: str,
+    topic: str,
+    statement: str,
+    source_type: str = "SEC filing",
+    source_url: str | None = None,
+    form: str | None = None,
+    filing_date: str | None = None,
+    period: str | None = None,
+    fact_or_inference: str = "Fact",
+    polarity: str = "Neutral",
+) -> None:
+    values = [
+        ticker.strip().upper(),
+        framework.strip(),
+        topic.strip(),
+        statement.strip(),
+        source_type.strip(),
+        (source_url or "").strip() or None,
+        (form or "").strip() or None,
+        (filing_date or "").strip() or None,
+        (period or "").strip() or None,
+        fact_or_inference.strip(),
+        polarity.strip(),
+    ]
+    if not values[0] or not values[1] or not values[2] or not values[3]:
+        return
+    init_db()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO evidence (
+                ticker, framework, topic, statement, source_type, source_url,
+                form, filing_date, period, fact_or_inference, polarity, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (*values, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def list_evidence(
+    ticker: str,
+    topic: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    init_db()
+    sql = """
+        SELECT id, ticker, framework, topic, statement, source_type,
+               source_url, form, filing_date, period,
+               fact_or_inference, polarity, created_at
+        FROM evidence
+        WHERE ticker = ?
+    """
+    params: list[object] = [ticker.strip().upper()]
+    if topic:
+        sql += " AND topic = ?"
+        params.append(topic.strip())
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(int(limit))
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_evidence(evidence_id: int) -> None:
+    init_db()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM evidence WHERE id = ?", (int(evidence_id),))
