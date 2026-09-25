@@ -58,9 +58,12 @@ def fmt_num(x):
     except (TypeError, ValueError, OverflowError):
         return "N/A"
 
-def safe_ratio(a,b):
-    if a is None or b is None or pd.isna(a) or pd.isna(b) or b==0: return None
-    return a/b
+def safe_ratio(a, b):
+    a = _to_finite_float(a)
+    b = _to_finite_float(b)
+    if a is None or b is None or b == 0:
+        return None
+    return a / b
 
 def latest_row(df,names):
     if df is None or df.empty: return None
@@ -80,10 +83,46 @@ def cagr(df,names,periods=3):
                 if old>0 and new>0: return (new/old)**(1/periods)-1
     return None
 
-@st.cache_data(ttl=900,show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def load_stock(ticker):
-    s=yf.Ticker(ticker)
-    return s.info or {},s.history(period="5y",auto_adjust=False),s.income_stmt,s.balance_sheet,s.cashflow
+    """Load each yfinance component independently so one flaky endpoint cannot crash the whole app."""
+    s = yf.Ticker(ticker)
+
+    try:
+        info = s.info or {}
+    except Exception:
+        info = {}
+
+    try:
+        hist = s.history(period="5y", auto_adjust=False)
+    except Exception:
+        hist = pd.DataFrame()
+
+    try:
+        income = s.get_income_stmt(freq="yearly")
+    except Exception:
+        try:
+            income = s.income_stmt
+        except Exception:
+            income = pd.DataFrame()
+
+    try:
+        balance = s.get_balance_sheet(freq="yearly")
+    except Exception:
+        try:
+            balance = s.balance_sheet
+        except Exception:
+            balance = pd.DataFrame()
+
+    try:
+        cashflow = s.get_cash_flow(freq="yearly")
+    except Exception:
+        try:
+            cashflow = s.cashflow
+        except Exception:
+            cashflow = pd.DataFrame()
+
+    return info, hist, income, balance, cashflow
 
 # --- SEC PRIMARY SOURCE LAYER ---
 import requests
@@ -233,11 +272,21 @@ except Exception as e:
 price = _to_finite_float(info.get("currentPrice"))
 if price is None:
     price = _to_finite_float(info.get("regularMarketPrice"))
+if price is None and hist is not None and not hist.empty and "Close" in hist.columns:
+    close = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+    if not close.empty:
+        price = _to_finite_float(close.iloc[-1])
 if not info or price is None:
     st.error("ไม่พบข้อมูลราคาที่เพียงพอสำหรับ " + ticker)
     st.stop()
 name = info.get("longName") or info.get("shortName") or ticker
 change = _to_finite_float(info.get("regularMarketChangePercent"))
+if change is None and hist is not None and len(hist) >= 2 and "Close" in hist.columns:
+    close = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+    if len(close) >= 2:
+        previous_close = _to_finite_float(close.iloc[-2])
+        if previous_close not in (None, 0):
+            change = ((price - previous_close) / previous_close) * 100
 
 st.title(name+" ("+ticker+")")
 st.caption("Research before investing — รวบรวมข้อมูลให้ตรวจสอบเอง ไม่ใช่ระบบแนะนำซื้อหรือขาย")
@@ -245,8 +294,12 @@ st.caption("Research before investing — รวบรวมข้อมูล�
 c1,c2,c3,c4,c5=st.columns(5)
 c1.metric("ราคาล่าสุด", f"${price:.2f}", f"{change:.2f}%" if change is not None else None)
 c2.metric("Market Cap",fmt_money(info.get("marketCap")))
-c3.metric("Trailing P/E",fmt_num(info.get("trailingPE")))
-c4.metric("Forward P/E",fmt_num(info.get("forwardPE")))
+trailing_eps = _to_finite_float(info.get("trailingEps"))
+forward_eps = _to_finite_float(info.get("forwardEps"))
+trailing_pe = price / trailing_eps if trailing_eps is not None and trailing_eps > 0 else None
+forward_pe = price / forward_eps if forward_eps is not None and forward_eps > 0 else None
+c3.metric("Trailing P/E", fmt_num(trailing_pe))
+c4.metric("Forward P/E", fmt_num(forward_pe))
 c5.metric("Dividend Yield",fmt_pct(info.get("dividendYield")))
 st.caption("Sector: "+str(info.get("sector","N/A"))+" · Industry: "+str(info.get("industry","N/A")))
 
@@ -346,7 +399,7 @@ with tab2:
 with tab3:
     st.markdown('<div class="section">Valuation snapshot</div>',unsafe_allow_html=True)
     vals=pd.DataFrame({"Metric":["Current Price","Trailing P/E","Forward P/E","PEG","Price / Sales","Price / Book","EV / EBITDA"],
-    "Value":[f"${price:.2f}",fmt_num(info.get("trailingPE")),fmt_num(info.get("forwardPE")),fmt_num(info.get("pegRatio")),
+    "Value":[f"${price:.2f}",fmt_num(trailing_pe),fmt_num(forward_pe),fmt_num(info.get("pegRatio")),
     fmt_num(info.get("priceToSalesTrailing12Months")),fmt_num(info.get("priceToBook")),fmt_num(info.get("enterpriseToEbitda"))]})
     st.dataframe(vals,hide_index=True,use_container_width=True)
     st.markdown('<div class="section">Scenario calculator — ไม่ใช่คำแนะนำราคา</div>',unsafe_allow_html=True)
@@ -369,7 +422,7 @@ with tab4:
     st.markdown('<div class="section">Risk checklist</div>',unsafe_allow_html=True)
     de=info.get("debtToEquity"); fcf=info.get("freeCashflow")
     risks=pd.DataFrame({"หัวข้อ":["Revenue/customer concentration","Debt & interest burden","Stock-based compensation / dilution","Cash flow vs earnings","Margin trend","Competition","Regulatory / legal exposure","Management capital allocation","Valuation expectations"],
-    "สิ่งที่ระบบมี":["ต้องอ่าน annual report / 10-K เพิ่ม","D/E: "+fmt_num(de/100 if de is not None else None),"ต้องตรวจ diluted shares และงบ","FCF: "+fmt_money(fcf),"Operating margin: "+fmt_pct(safe_ratio(latest_row(income,["Operating Income"]),latest_row(income,["Total Revenue"]))),"ต้องอ่านคู่แข่งเพิ่มเติม","ต้องตรวจ filings","ต้องอ่าน shareholder letter / filings","Forward P/E: "+fmt_num(info.get("forwardPE"))]})
+    "สิ่งที่ระบบมี":["ต้องอ่าน annual report / 10-K เพิ่ม","D/E: "+fmt_num(de/100 if de is not None else None),"ต้องตรวจ diluted shares และงบ","FCF: "+fmt_money(fcf),"Operating margin: "+fmt_pct(safe_ratio(latest_row(income,["Operating Income"]),latest_row(income,["Total Revenue"]))),"ต้องอ่านคู่แข่งเพิ่มเติม","ต้องตรวจ filings","ต้องอ่าน shareholder letter / filings","Forward P/E: "+fmt_num(forward_pe)]})
     st.dataframe(risks,hide_index=True,use_container_width=True)
     st.markdown('<div class="section">ก่อนตัดสินใจควรตรวจอะไร?</div>',unsafe_allow_html=True)
     st.markdown("""<div class="note"><b>1.</b> Annual report / 10-K และหมายเหตุประกอบงบ<br><b>2.</b> รายงานไตรมาสล่าสุดและคำอธิบายของผู้บริหาร<br><b>3.</b> Revenue drivers, customers, competitors และ market structure<br><b>4.</b> Cash flow, debt, dilution และ stock-based compensation<br><b>5.</b> Valuation เทียบกับ growth ที่ตลาดกำลังคาดหวัง</div>""",unsafe_allow_html=True)
