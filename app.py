@@ -364,8 +364,43 @@ with tab4:
         notes_df = notes_df.rename(columns={"created_at":"Created","note":"Note"}).drop(columns=["id"])
         st.dataframe(notes_df,hide_index=True,use_container_width=True)
 
+
 with tab5:
     sec_addon(ticker)
+
+    st.markdown('<div class="section">Lynch x Fisher Research Map</div>', unsafe_allow_html=True)
+    st.caption("กรอบนี้ใช้จัดหลักฐานเพื่อการวิจัย ไม่ใช่คะแนนซื้อ/ขาย และไม่ใช่การจัดอันดับหุ้น")
+
+    rq = {}
+    try:
+        rq = build_sec_financial_quality(sec_financial_snapshot(ticker))
+    except Exception:
+        rq = {}
+    latest = rq.get("latest", {})
+
+    lynch_rows = [
+        {"Question":"Business / story type","Status":"ต้องอ่าน business description และ 10-K เพื่อจำแนกประเภทของธุรกิจ"},
+        {"Question":"Sales growth","Status":fmt_pct(latest.get("revenue_cagr_3y")) + " revenue CAGR (3Y)"},
+        {"Question":"Earnings growth","Status":fmt_pct(latest.get("net_income_cagr_3y")) + " net income CAGR (3Y)"},
+        {"Question":"Growth vs valuation","Status":"ตรวจคู่กันใน Valuation tab; ไม่มี automatic verdict"},
+        {"Question":"Growth story","Status":"ต้องรวบรวม evidence จาก filings และบริษัท"},
+        {"Question":"What could break the story?","Status":"ตรวจ growth slowdown, debt, dilution, margins และ competition"}
+    ]
+    st.markdown("**Peter Lynch — business story & growth**")
+    st.dataframe(pd.DataFrame(lynch_rows), hide_index=True, use_container_width=True)
+
+    fisher_rows = [
+        {"Area":"Market potential / sales runway","Status":"ต้องหา evidence เรื่องตลาด ผลิตภัณฑ์ และโอกาสขยายยอดขาย"},
+        {"Area":"Competitive position","Status":"ตรวจคู่แข่ง switching costs distribution และ differentiation"},
+        {"Area":"R&D / product pipeline","Status":"ตรวจ 10-K และ product disclosures"},
+        {"Area":"Profit margins / economics","Status":f"Operating margin {fmt_pct(latest.get('operating_margin'))} | FCF margin {fmt_pct(latest.get('fcf_margin'))}"},
+        {"Area":"Management / capital allocation","Status":"ตรวจ annual report, proxy และ shareholder materials"},
+        {"Area":"Financial position","Status":f"Debt YoY {fmt_pct(latest.get('debt_change_yoy'))} | Diluted shares YoY {fmt_pct(latest.get('diluted_shares_yoy'))}"},
+        {"Area":"External validation / scuttlebutt","Status":"ต้องใช้ข้อมูลภายนอกบริษัทเพื่อทดสอบ claims"}
+    ]
+    st.markdown("**Philip Fisher — quality & long-term growth**")
+    st.dataframe(pd.DataFrame(fisher_rows), hide_index=True, use_container_width=True)
+
     st.caption("SEC layer ใช้ submissions history และ XBRL Company Facts จาก SEC เป็นหลัก; ตัวเลขจะแสดง filing form และวันที่ยื่นเพื่อช่วยตรวจสอบย้อนกลับ.")
 
 st.divider()
