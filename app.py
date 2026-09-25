@@ -30,7 +30,7 @@ def _to_finite_float(x):
         if pd.isna(value):
             return None
         value = float(value)
-        if not pd.api.types.is_number(value) or not pd.np.isfinite(value):
+        if not __import__("math").isfinite(value):
             return None
         return value
     except (TypeError, ValueError, OverflowError):
