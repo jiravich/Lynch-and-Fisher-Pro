@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 from financial_engine import build_sec_financial_quality
-from storage import add_watchlist, init_db, list_notes, save_note, remove_watchlist
+from storage import add_watchlist, delete_evidence, init_db, list_evidence, list_notes, remove_watchlist, save_evidence, save_note
 
 st.set_page_config(page_title="Stock Research Terminal", page_icon="📊", layout="wide")
 
@@ -367,6 +367,191 @@ with tab4:
 
 with tab5:
     sec_addon(ticker)
+
+    st.markdown('<div class="section">Evidence Store</div>', unsafe_allow_html=True)
+    st.caption("เก็บหลักฐานที่ตรวจสอบย้อนกลับได้ แล้วค่อยนำไปสังเคราะห์ด้วย AI ในขั้นถัดไป — ตอนนี้ยังไม่มี AI ตัดสินแทนผู้ใช้")
+
+    evidence_topics = {
+        "Lynch": [
+            "Business / story type",
+            "Sales growth",
+            "Earnings growth",
+            "Growth vs valuation",
+            "Growth story",
+            "What could break the story?",
+        ],
+        "Fisher": [
+            "Market potential / sales runway",
+            "Competitive position",
+            "R&D / product pipeline",
+            "Profit margins / economics",
+            "Management / capital allocation",
+            "Financial position",
+            "External validation / scuttlebutt",
+        ],
+        "General": [
+            "Revenue / customers",
+            "Debt / liquidity",
+            "Dilution / stock-based compensation",
+            "Accounting / footnotes",
+            "Regulatory / legal",
+            "Other",
+        ],
+    }
+
+    with st.form("evidence_form", clear_on_submit=True):
+        e1, e2 = st.columns(2)
+        framework = e1.selectbox("Framework", list(evidence_topics.keys()))
+        topic = e2.selectbox("Topic", evidence_topics[framework])
+        statement = st.text_area(
+            "Evidence statement",
+            placeholder="เขียนสิ่งที่พบจากเอกสารด้วยภาษาของตัวเอง เช่น บริษัทระบุว่า...",
+            height=120,
+        )
+        e3, e4, e5 = st.columns(3)
+        fact_or_inference = e3.selectbox("ประเภท", ["Fact", "Inference", "Unknown"])
+        polarity = e4.selectbox("มุมของหลักฐาน", ["Supports", "Neutral", "Risk"])
+        source_type = e5.selectbox("Source type", ["SEC filing", "Company material", "Other"])
+        filing_choice = None
+        if source_type == "SEC filing":
+            filings_for_evidence, _ = sec_filing_rows(ticker)
+            if not filings_for_evidence.empty:
+                labels = [
+                    f"{row['Form']} · filed {row['Filed']} · period {row['Period']}"
+                    for _, row in filings_for_evidence.iterrows()
+                ]
+                selected_label = st.selectbox("SEC source", labels)
+                filing_choice = filings_for_evidence.iloc[labels.index(selected_label)]
+            else:
+                st.info("ยังหา SEC filing ของ ticker นี้ไม่ได้ — สามารถเลือก source type อื่นได้")
+        else:
+            source_url_input = st.text_input("Source URL (optional)")
+        submitted = st.form_submit_button("บันทึก Evidence", use_container_width=True)
+
+    if submitted:
+        if not statement.strip():
+            st.warning("ต้องใส่ Evidence statement ก่อนบันทึก")
+        else:
+            if source_type == "SEC filing" and filing_choice is not None:
+                source_url = filing_choice["URL"]
+                form = filing_choice["Form"]
+                filing_date = filing_choice["Filed"]
+                period = filing_choice["Period"]
+            else:
+                source_url = locals().get("source_url_input", "").strip() or None
+                form = filing_date = period = None
+            save_evidence(
+                ticker=ticker,
+                framework=framework,
+                topic=topic,
+                statement=statement,
+                source_type=source_type,
+                source_url=source_url,
+                form=form,
+                filing_date=filing_date,
+                period=period,
+                fact_or_inference=fact_or_inference,
+                polarity=polarity,
+            )
+            st.success("บันทึก Evidence แล้ว")
+            st.rerun()
+
+    evidence = list_evidence(ticker)
+    if evidence:
+        st.markdown("#### Evidence ที่บันทึกไว้")
+        evidence_df = pd.DataFrame(evidence)
+        evidence_df["created_at"] = pd.to_datetime(
+            evidence_df["created_at"], errors="coerce"
+        ).dt.strftime("%Y-%m-%d %H:%M")
+        evidence_df = evidence_df.rename(
+            columns={
+                "framework": "Framework",
+                "topic": "Topic",
+                "statement": "Evidence",
+                "source_type": "Source",
+                "form": "Form",
+                "filing_date": "Filed",
+                "period": "Period",
+                "fact_or_inference": "Type",
+                "polarity": "Polarity",
+                "source_url": "Source URL",
+                "created_at": "Created",
+            }
+        )
+        st.dataframe(
+            evidence_df[
+                [
+                    "Framework", "Topic", "Evidence", "Type", "Polarity",
+                    "Source", "Form", "Filed", "Period", "Source URL", "Created"
+                ]
+            ],
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Source URL": st.column_config.LinkColumn("Source"),
+            },
+        )
+
+        delete_id = st.number_input(
+            "Evidence ID ที่ต้องการลบ",
+            min_value=0,
+            value=0,
+            step=1,
+            help="ใช้ ID จากรายการในฐานข้อมูลเพื่อแก้ evidence ที่บันทึกผิด",
+        )
+        if st.button("ลบ Evidence", key="delete_evidence"):
+            if delete_id > 0:
+                delete_evidence(int(delete_id))
+                st.success("ลบ Evidence แล้ว")
+                st.rerun()
+            else:
+                st.warning("ใส่ Evidence ID ที่มากกว่า 0")
+    else:
+        st.info("ยังไม่มี Evidence สำหรับหุ้นนี้")
+
+    st.markdown('<div class="section">Lynch x Fisher Research Map</div>', unsafe_allow_html=True)
+    st.caption("กรอบนี้ใช้จัดหลักฐานเพื่อการวิจัย ไม่ใช่คะแนนซื้อ/ขาย และไม่ใช่การจัดอันดับหุ้น")
+
+    rq = {}
+    try:
+        rq = build_sec_financial_quality(sec_financial_snapshot(ticker))
+    except Exception:
+        rq = {}
+    latest = rq.get("latest", {})
+
+    lynch_rows = [
+        {"Question":"Business / story type","Status":"ต้องอ่าน business description และ 10-K เพื่อจำแนกประเภทของธุรกิจ"},
+        {"Question":"Sales growth","Status":fmt_pct(latest.get("revenue_cagr_3y")) + " revenue CAGR (3Y)"},
+        {"Question":"Earnings growth","Status":fmt_pct(latest.get("net_income_cagr_3y")) + " net income CAGR (3Y)"},
+        {"Question":"Growth vs valuation","Status":"ตรวจคู่กันใน Valuation tab; ไม่มี automatic verdict"},
+        {"Question":"Growth story","Status":"ต้องรวบรวม evidence จาก filings และบริษัท"},
+        {"Question":"What could break the story?","Status":"ตรวจ growth slowdown, debt, dilution, margins และ competition"}
+    ]
+    st.markdown("**Peter Lynch — business story & growth**")
+    st.dataframe(pd.DataFrame(lynch_rows), hide_index=True, use_container_width=True)
+
+    fisher_rows = [
+        {"Area":"Market potential / sales runway","Status":"ต้องหา evidence เรื่องตลาด ผลิตภัณฑ์ และโอกาสขยายยอดขาย"},
+        {"Area":"Competitive position","Status":"ตรวจคู่แข่ง switching costs distribution และ differentiation"},
+        {"Area":"R&D / product pipeline","Status":"ตรวจ 10-K และ product disclosures"},
+        {"Area":"Profit margins / economics","Status":f"Operating margin {fmt_pct(latest.get('operating_margin'))} | FCF margin {fmt_pct(latest.get('fcf_margin'))}"},
+        {"Area":"Management / capital allocation","Status":"ตรวจ annual report, proxy และ shareholder materials"},
+        {"Area":"Financial position","Status":f"Debt YoY {fmt_pct(latest.get('debt_change_yoy'))} | Diluted shares YoY {fmt_pct(latest.get('diluted_shares_yoy'))}"},
+        {"Area":"External validation / scuttlebutt","Status":"ต้องใช้ข้อมูลภายนอกบริษัทเพื่อทดสอบ claims"}
+    ]
+    st.markdown("**Philip Fisher — quality & long-term growth**")
+    st.dataframe(pd.DataFrame(fisher_rows), hide_index=True, use_container_width=True)
+
+    if evidence:
+        st.markdown("#### Research Map — Evidence coverage")
+        coverage_rows = []
+        for fw, topics in evidence_topics.items():
+            for tp in topics:
+                count = sum(1 for item in evidence if item["framework"] == fw and item["topic"] == tp)
+                coverage_rows.append({"Framework": fw, "Topic": tp, "Evidence count": count})
+        st.dataframe(pd.DataFrame(coverage_rows), hide_index=True, use_container_width=True)
+
+    st.caption("SEC layer ใช้ submissions history และ XBRL Company Facts จาก SEC เป็นหลัก; ตัวเลขจะแสดง filing form และวันที่ยื่นเพื่อช่วยตรวจสอบย้อนกลับ.")
 
     st.markdown('<div class="section">Lynch x Fisher Research Map</div>', unsafe_allow_html=True)
     st.caption("กรอบนี้ใช้จัดหลักฐานเพื่อการวิจัย ไม่ใช่คะแนนซื้อ/ขาย และไม่ใช่การจัดอันดับหุ้น")
