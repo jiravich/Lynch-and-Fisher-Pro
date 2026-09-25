@@ -476,12 +476,13 @@ with tab5:
                 "polarity": "Polarity",
                 "source_url": "Source URL",
                 "created_at": "Created",
+                "id": "ID",
             }
         )
         st.dataframe(
             evidence_df[
                 [
-                    "Framework", "Topic", "Evidence", "Type", "Polarity",
+                    "ID", "Framework", "Topic", "Evidence", "Type", "Polarity",
                     "Source", "Form", "Filed", "Period", "Source URL", "Created"
                 ]
             ],
