@@ -59,6 +59,109 @@ def load_stock(ticker):
     s=yf.Ticker(ticker)
     return s.info or {},s.history(period="5y",auto_adjust=False),s.income_stmt,s.balance_sheet,s.cashflow
 
+# --- SEC PRIMARY SOURCE LAYER ---
+import requests
+import pandas as pd
+import streamlit as st
+
+SEC_HEADERS = {"User-Agent": "Stock Research Terminal contact@example.com", "Accept-Encoding": "gzip, deflate"}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def sec_ticker_map():
+    r=requests.get("https://www.sec.gov/files/company_tickers.json",headers=SEC_HEADERS,timeout=20)
+    r.raise_for_status()
+    data=r.json()
+    return {v["ticker"].upper(): str(v["cik_str"]).zfill(10) for v in data.values()}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def sec_submissions(cik):
+    r=requests.get(f"https://data.sec.gov/submissions/CIK{cik}.json",headers=SEC_HEADERS,timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def sec_companyfacts(cik):
+    r=requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",headers=SEC_HEADERS,timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def sec_filing_rows(ticker):
+    cik=sec_ticker_map().get(ticker)
+    if not cik: return pd.DataFrame(), None
+    sub=sec_submissions(cik)
+    recent=sub.get("filings",{}).get("recent",{})
+    rows=[]
+    for i,form in enumerate(recent.get("form",[])):
+        if form in ("10-K","10-Q","20-F","6-K"):
+            rows.append({
+                "Form":form,
+                "Filed":recent["filingDate"][i],
+                "Period":recent["reportDate"][i],
+                "Accession":recent["accessionNumber"][i],
+                "Document":recent["primaryDocument"][i],
+                "URL":f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{recent['accessionNumber'][i].replace('-','')}/{recent['primaryDocument'][i]}"
+            })
+        if len(rows)>=12: break
+    return pd.DataFrame(rows), cik
+
+def sec_fact_series(facts, tags):
+    for taxonomy,tag in tags:
+        units=facts.get("facts",{}).get(taxonomy,{}).get(tag,{}).get("units",{})
+        if not units: continue
+        unit=next(iter(units))
+        rows=units[unit]
+        annual=[x for x in rows if x.get("fp")=="FY" and x.get("form") in ("10-K","20-F")]
+        annual=sorted(annual,key=lambda x:x.get("filed",""),reverse=True)
+        if annual:
+            return pd.DataFrame(annual)
+    return pd.DataFrame()
+
+def sec_financial_snapshot(ticker):
+    try:
+        _,cik=sec_filing_rows(ticker)
+        if not cik: return {}
+        facts=sec_companyfacts(cik)
+        out={}
+        tag_map={
+            "Revenue":[("us-gaap","RevenueFromContractWithCustomerExcludingAssessedTax"),("us-gaap","Revenues")],
+            "Net Income":[("us-gaap","NetIncomeLoss")],
+            "Operating Cash Flow":[("us-gaap","NetCashProvidedByUsedInOperatingActivities")],
+            "Capital Expenditure":[("us-gaap","PaymentsToAcquirePropertyPlantAndEquipment")],
+            "Assets":[("us-gaap","Assets")],
+            "Liabilities":[("us-gaap","Liabilities")],
+            "Cash":[("us-gaap","CashAndCashEquivalentsAtCarryingValue")],
+            "Debt":[("us-gaap","LongTermDebtNoncurrent"),("us-gaap","LongTermDebtCurrent")]
+        }
+        for label,tags in tag_map.items():
+            df=sec_fact_series(facts,tags)
+            if not df.empty:
+                out[label]=df
+        return out
+    except Exception as e:
+        return {"_error":str(e)}
+
+def sec_addon(ticker):
+    st.markdown("### 🏛️ SEC EDGAR — Primary-source layer")
+    st.caption("SEC EDGAR submissions และ XBRL company facts เป็นข้อมูลจากเอกสารที่ยื่นต่อ SEC; API ของ SEC ไม่ต้องใช้ API key และมีข้อมูล filings/XBRL แบบอัปเดตต่อเนื่อง. citeturn0search0")
+    filings,cik=sec_filing_rows(ticker)
+    if filings.empty:
+        st.info("ไม่พบ SEC filing mapping สำหรับ ticker นี้")
+        return
+    st.write("CIK:",cik)
+    display=filings[["Form","Filed","Period","URL"]].copy()
+    st.dataframe(display,hide_index=True,use_container_width=True,column_config={"URL":st.column_config.LinkColumn("SEC Filing")})
+    snap=sec_financial_snapshot(ticker)
+    if snap.get("_error"):
+        st.warning("SEC XBRL โหลดไม่สำเร็จ: "+snap["_error"])
+        return
+    st.markdown("#### SEC financial facts")
+    records=[]
+    for label,df in snap.items():
+        if isinstance(df,pd.DataFrame) and not df.empty:
+            x=df.iloc[0]
+            records.append({"Fact":label,"Value":x.get("val"),"Unit":x.get("accn",""),"Filed":x.get("filed"),"FY":x.get("fy"),"Form":x.get("form")})
+    if records: st.dataframe(pd.DataFrame(records),hide_index=True,use_container_width=True)
+
 if "watchlist" not in st.session_state:
     st.session_state.watchlist=["NVDA","MSFT","AAPL","GOOGL"]
 
